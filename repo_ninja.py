@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema.document import Document
@@ -22,7 +23,15 @@ Answer the question based on the above context: {question}
 
 
 class RepoNinja:
-    def __init__(self, owner, repo, branch, model_name: str = "llama3.1"):
+    def __init__(
+        self,
+        owner: str,
+        repo: str,
+        branch: str,
+        directories: str,
+        model_name: str = "llama3.1",
+    ):
+        start_time = datetime.now()
         self.model_name = model_name
         github_token = os.environ.get("GITHUB_TOKEN")
         github_client = GithubClient(github_token=github_token, verbose=True)
@@ -34,7 +43,7 @@ class RepoNinja:
             use_parser=False,
             verbose=False,
             filter_directories=(
-                ["src"],
+                directories.split(","),
                 GithubRepositoryReader.FilterType.INCLUDE,
             ),
             filter_file_extensions=(
@@ -52,14 +61,17 @@ class RepoNinja:
             ),
         ).load_data(branch=branch)
 
+        print(f"🐙 Github Repo {owner}/{repo} loaded.")
         chunks = [
             Document(page_content=doc.text, metadata=doc.metadata) for doc in documents
         ]
         self.add_to_chroma(chunks)
+        end_time = datetime.now()
+        print(f"⏰ Time taken to load repo in Chroma: {end_time - start_time}")
 
     def split_documents(self, documents: list[Document]):
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=800,
+            chunk_size=1024,
             chunk_overlap=80,
             length_function=len,
             is_separator_regex=False,
@@ -80,7 +92,7 @@ class RepoNinja:
 
         existing_items = db.get(include=[])
         existing_ids = set(existing_items["ids"])
-        print(f"Number of existing documents in DB: {len(existing_ids)}")
+        print(f"📄 Number of existing documents in DB: {len(existing_ids)}")
 
         new_chunks = [
             chunk
@@ -92,6 +104,7 @@ class RepoNinja:
             print(f"👉 Adding new documents: {len(new_chunks)}")
             new_chunk_ids = [chunk.metadata["id"] for chunk in new_chunks]
             db.add_documents(new_chunks, ids=new_chunk_ids)
+            print("✅ New documents added")
         else:
             print("✅ No new documents to add")
 

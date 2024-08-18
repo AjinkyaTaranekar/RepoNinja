@@ -4,10 +4,12 @@ github_url = input(
     "🐙 Enter GitHub URL:\nExample (https://github.com/AjinkyaTaranekar/Imagico): "
 )
 branch = input("🌿 Enter branch name: ")
+directories = input("📁 Enter comma separated directories name: ")
 
 
 user, repo = github_url.split("/")[-2:]
-repo_ninja = RepoNinja(user, repo, branch)
+print("⏳ Starting initiation of Ninja ⏳")
+repo_ninja = RepoNinja(user, repo, branch, directories)
 
 # [
 #     "What is the main purpose of this repository?",
@@ -17,7 +19,9 @@ repo_ninja = RepoNinja(user, repo, branch)
 #     "What all features are there in this repository?",
 # ]
 
-print(f"🥷 Repo Ninja initiated for repo:{user}/{repo}, branch:{branch}")
+print(
+    f"🥷 Repo Ninja initiated for repo:{user}/{repo}, \nbranch:{branch}, \ndirectories:{directories}"
+)
 while True:
     print(
         "-------------------------------------------------------------------------------"
