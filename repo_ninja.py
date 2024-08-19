@@ -3,22 +3,27 @@ from datetime import datetime
 
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema.document import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.embeddings.ollama import OllamaEmbeddings
 from langchain_community.llms.ollama import Ollama
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from llama_index.readers.github import GithubClient, GithubRepositoryReader
 
 CHROMA_PATH = "chroma"
 
 PROMPT_TEMPLATE = """
-Answer the question based only on the following context:
+You are a code analysis assistant with deep understanding of software development, capable of interpreting complex codebases.
 
+Given the following context, provide a precise and detailed answer to the question. Ensure your response is clear, concise, and directly addresses the question.
+
+Context:
 {context}
 
 ---
 
-Answer the question based on the above context: {question}
+Question: {question}
+
+Answer:
 """
 
 
@@ -40,7 +45,7 @@ class RepoNinja:
             github_client=github_client,
             owner=owner,
             repo=repo,
-            use_parser=False,
+            use_parser=True,
             verbose=False,
             filter_directories=(
                 directories.split(","),
@@ -54,7 +59,7 @@ class RepoNinja:
                     ".gif",
                     ".svg",
                     ".ico",
-                    "json",
+                    ".json",
                     ".ipynb",
                 ],
                 GithubRepositoryReader.FilterType.EXCLUDE,
@@ -62,9 +67,12 @@ class RepoNinja:
         ).load_data(branch=branch)
 
         print(f"🐙 Github Repo {owner}/{repo} loaded.")
-        chunks = [
-            Document(page_content=doc.text, metadata=doc.metadata) for doc in documents
-        ]
+        chunks = self.split_documents(
+            [
+                Document(page_content=doc.text, metadata=doc.metadata)
+                for doc in documents
+            ]
+        )
         self.add_to_chroma(chunks)
         end_time = datetime.now()
         print(f"⏰ Time taken to load repo in Chroma: {end_time - start_time}")
@@ -137,13 +145,25 @@ class RepoNinja:
 
         results = db.similarity_search_with_score(query_text, k=5)
 
-        context_text = "\n\n---\n\n".join([doc.page_content for doc, _score in results])
+        num_chunks = min(10, len(results))  # Start with the top 10 chunks
+        context_texts = [doc.page_content for doc, _score in results[:num_chunks]]
+
+        context_text = "\n\n---\n\n".join(context_texts)
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
         prompt = prompt_template.format(context=context_text, question=query_text)
 
         model = Ollama(model=self.model_name)
         response_text = model.invoke(prompt)
 
-        sources = [doc.metadata.get("id", None) for doc, _score in results]
+        if "I don't know" in response_text or len(response_text.strip()) < 10:
+            print("🤔 Initial response not confident, refining context...")
+            num_chunks += 5  # Increase context size and re-query
+            context_texts = [doc.page_content for doc, _score in results[:num_chunks]]
+            context_text = "\n\n---\n\n".join(context_texts)
+
+            prompt = prompt_template.format(context=context_text, question=query_text)
+            response_text = model.invoke(prompt)
+
+        sources = [doc.metadata.get("id", None) for doc, _score in results[:num_chunks]]
         formatted_response = {"responses": response_text, "sources": sources}
         return formatted_response
